@@ -1,0 +1,26 @@
+{
+  "lang": "csharp",
+  "runtime": "lnx-jit-default",
+  "codegen": "jit",
+  "frameworkDescription": ".NET 10.0.10",
+  "runtimeIdentifier": "linux-x64",
+  "processArchitecture": "X64",
+  "osDescription": "Ubuntu 24.04.4 LTS",
+  "serverGC": false,
+  "gcLatencyMode": "Batch",
+  "flags": "DOTNET_TieredCompilation=(unset->default on); DOTNET_TC_QuickJitForLoops=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); noGcRequested=False; noGcActive=False; latencyModeDuringRun=Batch; codegen=jit",
+  "pinnedCore": 11,
+  "stopwatchFrequency": 1000000000,
+  "isHighResolution": true,
+  "benchmarks": [
+    {
+      "name": "fix_parse_nosum",
+      "checksum": "0xFDD391470268D3D8",
+      "opsPerRep": 200000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 144,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [109.573995, 99.333835, 101.273250, 102.526370, 109.420115, 104.318310, 100.657730, 113.244605, 118.856105, 95.450615, 96.354685, 94.976395, 97.273745, 93.870120, 98.701905]
+    }
+  ]
+}

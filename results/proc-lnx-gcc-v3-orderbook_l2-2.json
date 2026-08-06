@@ -4,7 +4,7 @@
   "codegen": "native",
   "compiler": "gcc 13.3.0",
   "platform": "linux",
-  "flags": "g++ -std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto -march=x86-64-v3",
+  "flags": "g++ -std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto -fno-stack-protector -U_FORTIFY_SOURCE -march=x86-64-v3",
   "pinnedCore": 11,
   "benchmarks": [
     {
@@ -14,7 +14,7 @@
       "repsPerSeries": 1,
       "allocatedBytes": 0,
       "gen0Collections": 0,
-      "nsPerOpSeries": [6.407287, 6.579897, 6.084585, 6.759658, 6.361125, 6.534022, 6.674443, 6.680273, 6.072979, 6.604171, 6.580229, 6.067033, 6.238455, 5.901206, 6.007020]
+      "nsPerOpSeries": [5.665766, 5.711030, 5.652458, 5.561308, 5.641675, 5.694871, 5.765723, 6.002808, 5.726214, 5.831315, 6.727509, 5.924888, 5.683538, 5.921150, 5.927670]
     }
   ]
 }

@@ -1,0 +1,26 @@
+{
+  "lang": "csharp",
+  "runtime": "jit-tc0",
+  "codegen": "jit",
+  "frameworkDescription": ".NET 10.0.10",
+  "runtimeIdentifier": "win-x64",
+  "processArchitecture": "X64",
+  "osDescription": "Microsoft Windows 10.0.26200",
+  "serverGC": false,
+  "gcLatencyMode": "Batch",
+  "flags": "DOTNET_TieredCompilation=0; DOTNET_TC_QuickJitForLoops=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); noGcRequested=False; noGcActive=False; latencyModeDuringRun=Batch; codegen=jit",
+  "pinnedCore": 11,
+  "stopwatchFrequency": 10000000,
+  "isHighResolution": true,
+  "benchmarks": [
+    {
+      "name": "orderbook_l2_opt2",
+      "checksum": "0x1C1B44A5898F65EC",
+      "opsPerRep": 1000000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 144,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [8.998800, 9.097900, 9.049100, 8.790000, 8.958500, 8.727500, 9.112100, 8.738700, 8.412200, 8.583200, 8.441600, 8.725000, 8.357200, 8.626300, 8.567600]
+    }
+  ]
+}

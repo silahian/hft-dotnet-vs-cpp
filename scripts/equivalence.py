@@ -61,6 +61,15 @@ PAIRINGS = [
      "lnx-gcc-native", "orderbook_l2", "lnx-jit-tc0", "orderbook_l2_safe", 0.05),
     ("Linux    order book         GCC native vs C# best-config",
      "lnx-gcc-native", "orderbook_l2", "lnx-jit-qjfl-nogc", "orderbook_l2_opt2", 0.05),
+    # Parser in isolation: CheckSum validation removed on both sides, same source, and
+    # oracle-gated on its own checksum group. This is the pairing that says what the tag
+    # scan and integer decode cost, without a byte-sum dominating the measurement.
+    ("Windows  FIX parser only    MSVC 14.44 vs C# tc0",
+     "cpp-msvc1444", "fix_parse_nosum", "jit-tc0", "fix_parse_nosum", 0.10),
+    ("Windows  FIX parser only    MSVC 14.51 vs C# tc0",
+     "cpp-msvc1451", "fix_parse_nosum", "jit-tc0", "fix_parse_nosum", 0.10),
+    ("Linux    FIX parser only    GCC v3     vs C# tc0",
+     "lnx-gcc-v3", "fix_parse_nosum", "lnx-jit-tc0", "fix_parse_nosum", 0.25),
 ]
 
 

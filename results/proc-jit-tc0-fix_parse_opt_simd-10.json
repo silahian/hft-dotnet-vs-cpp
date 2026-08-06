@@ -8,7 +8,7 @@
   "osDescription": "Microsoft Windows 10.0.26200",
   "serverGC": false,
   "gcLatencyMode": "Batch",
-  "flags": "DOTNET_TieredCompilation=0; DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); codegen=jit",
+  "flags": "DOTNET_TieredCompilation=0; DOTNET_TC_QuickJitForLoops=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); noGcRequested=False; noGcActive=False; latencyModeDuringRun=Batch; codegen=jit",
   "pinnedCore": 11,
   "stopwatchFrequency": 10000000,
   "isHighResolution": true,
@@ -20,7 +20,7 @@
       "repsPerSeries": 1,
       "allocatedBytes": 144,
       "gen0Collections": 0,
-      "nsPerOpSeries": [106.177500, 106.250000, 108.055500, 106.935000, 103.668000, 104.356000, 105.524500, 106.355000, 104.481500, 102.801000, 102.594000, 102.580000, 100.098000, 101.435500, 100.557000]
+      "nsPerOpSeries": [96.282000, 99.190500, 101.749500, 96.939000, 98.907000, 98.961000, 103.417500, 104.488500, 102.007000, 101.911000, 102.964500, 100.299000, 99.107000, 101.550500, 98.894000]
     }
   ]
 }

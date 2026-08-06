@@ -1,0 +1,20 @@
+{
+  "lang": "cpp",
+  "runtime": "lnx-gcc-v3",
+  "codegen": "native",
+  "compiler": "gcc 13.3.0",
+  "platform": "linux",
+  "flags": "g++ -std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto -fno-stack-protector -U_FORTIFY_SOURCE -march=x86-64-v3",
+  "pinnedCore": 11,
+  "benchmarks": [
+    {
+      "name": "fix_parse_nosum",
+      "checksum": "0xFDD391470268D3D8",
+      "opsPerRep": 200000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 0,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [98.285220, 99.512125, 107.080170, 121.390840, 103.732170, 109.280145, 102.187200, 95.337740, 107.131640, 99.563900, 97.034325, 97.344305, 96.348245, 95.167725, 93.325360]
+    }
+  ]
+}

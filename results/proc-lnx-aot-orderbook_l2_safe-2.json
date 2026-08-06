@@ -8,7 +8,7 @@
   "osDescription": "Ubuntu 24.04.4 LTS",
   "serverGC": false,
   "gcLatencyMode": "Batch",
-  "flags": "DOTNET_TieredCompilation=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); codegen=nativeaot",
+  "flags": "DOTNET_TieredCompilation=(unset->default on); DOTNET_TC_QuickJitForLoops=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); noGcRequested=False; noGcActive=False; latencyModeDuringRun=Batch; codegen=nativeaot",
   "pinnedCore": 11,
   "stopwatchFrequency": 1000000000,
   "isHighResolution": true,
@@ -20,7 +20,7 @@
       "repsPerSeries": 1,
       "allocatedBytes": 144,
       "gen0Collections": 0,
-      "nsPerOpSeries": [9.806463, 9.009915, 10.658463, 9.108970, 8.964591, 9.192269, 9.102313, 9.688389, 9.334567, 9.496336, 9.088835, 8.739772, 8.789454, 8.953520, 9.370890]
+      "nsPerOpSeries": [11.844412, 18.236553, 12.396593, 11.774468, 9.969334, 10.306579, 12.065625, 10.607237, 10.431052, 10.091782, 10.083443, 10.606498, 10.234564, 10.207026, 10.194810]
     }
   ]
 }

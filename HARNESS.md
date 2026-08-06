@@ -113,7 +113,10 @@ because the FIX benchmark exposes 6 C# rows against 1 C++ row and taking "best C
 | FIX, equal-effort | `fix_parse_simd` (hand PSADBW) | `fix_parse_safe_simd` (hand PSADBW) |
 
 **Both FIX pairings are published.** MSVC and GCC auto-vectorize the scalar byte-sum
-(verified in emitted assembly: `vpmovzxbd` + `vpaddd`, `build/asm-msvc1444/main.cod`);
+(verified in emitted assembly: the `$LL7@sum:` loop body carries `vpmovzxbd` + `vpaddd`.
+`build/` is gitignored, so the excerpt is published at
+[results/asm-msvc1444-evidence.txt](results/asm-msvc1444-evidence.txt) rather than behind
+a path no reader of this repo can open);
 RyuJIT never auto-vectorizes. Reporting only same-source ignores that a competent C#
 author reaches for intrinsics; reporting only equal-effort hides that C++ got there for
 free. A hand-written SIMD policy was added to the C++ side specifically so the
@@ -211,14 +214,15 @@ is not built.
 - No standard-library strawmen. `memchr` is paired against `Span<byte>.IndexOf`, both
   handed the same remainder slice. **Corrected 2026-08-06:** this bullet used to add
   "both vectorized", which is asserted, not verified, and the shipped artifacts point the
-  other way. `build/asm-msvc1444/main.cod` carries `EXTRN memchr:PROC` and two `call
+  other way. The MSVC listing carries `EXTRN memchr:PROC` and two `call
   memchr` sites — under `/MT` that is an out-of-line static-CRT call, and `/Oi` does not
   intrinsify it — while RyuJIT inlines `IndexOf` into the caller. The trace counters put
   the volume at 3,000,000 scan calls per rep to find a byte a mean 5.61 positions away.
-  This asymmetry runs **against C++** in the one pairing where the two languages come out
-  level, so the FIX equal-effort result should be read as C++'s floor, not its ceiling.
-  Settling it needs either a disassembly of the UCRT and glibc `memchr` bodies or a C++
-  variant with a hand-inlined vector scan. Neither is in the repo.
+  This asymmetry runs **against C++** on the equal-effort pairing, so the equal-effort
+  numbers should be read as C++'s floor, not its ceiling. Excerpt published at
+  [results/asm-msvc1444-evidence.txt](results/asm-msvc1444-evidence.txt). Settling it
+  needs either a disassembly of the UCRT and glibc `memchr` bodies or a C++ variant with
+  a hand-inlined vector scan. Neither is in the repo.
 - Both sides allocation-free in steady state; the C# allocation counter is published.
 - Optimization flags are recorded verbatim in each result file, including the **actual**
   `DOTNET_TieredCompilation` environment value. (Previously this was read from

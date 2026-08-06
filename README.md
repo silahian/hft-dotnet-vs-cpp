@@ -13,52 +13,82 @@ practitioner would write them in each language.
 
 ## Headline result
 
-759 process launches, two C++ compilers, two operating systems, one checksum oracle that
-every implementation has to satisfy before a single timing is printed.
+869 process launches in the current matrix, plus a second, fully independent 506-launch
+matrix of the same Windows binaries used purely to ask whether the verdicts reproduce.
+Two C++ compilers, two operating systems, one checksum oracle that every implementation
+has to satisfy before a single timing is printed.
 
 The load-bearing numbers are **intervals on the difference**, not p-values. A large p
-would not distinguish "the same" from "too noisy to tell"; an interval does. Full table
-in [results/EQUIVALENCE.md](results/EQUIVALENCE.md).
+would not distinguish "the same" from "too noisy to tell"; an interval does. Full tables:
+[EQUIVALENCE.md](results/EQUIVALENCE.md), [SUMMARY.md](results/SUMMARY.md),
+[REPRODUCIBILITY.md](results/REPRODUCIBILITY.md).
 
-| workload | platform | pairing | 95% interval on (C++ − C#) | reading |
-| --- | --- | --- | --- | --- |
-| FIX 4.4 decode | Windows | equal-effort vs MSVC 14.44 | [−2.9%, +4.0%] | **equivalent within ±4%** |
-| FIX 4.4 decode | Windows | equal-effort vs MSVC 14.51 | [−7.1%, +1.4%] | equivalent, but C++ may be 7% ahead |
-| FIX 4.4 decode | Windows | **same-source** | C++ +36% (p ≤ 0.010) | **C++ wins** |
-| FIX 4.4 decode | Linux | equal-effort vs GCC 13.3 | [−6.1%, +8.6%] | **unresolved** — design cannot answer it |
-| L2 order book | Windows | like-for-like (no PGO either side) | [−25.4%, −13.1%] | **C++ wins** |
-| L2 order book | Linux | C++ vs best C# config | [−33.1%, −21.6%] | **C++ wins** |
+### What reproduces
 
-**"Equal-effort" means both sides hand-write the same PSADBW kernel.** "Same-source"
-means both sides write the obvious scalar loop — and there C++ wins by 36% on Windows,
-because MSVC auto-vectorizes it and RyuJIT does not. The parity result is real and it is
-narrow: it exists on one workload, on one platform, and only after a human writes
-`Vector256` on the C# side.
+| pairing | platform | 95% interval on (C++ − C#) | reading |
+| --- | --- | --- | --- |
+| FIX **same-source** | Windows | C++ +34% and +39% (p = 0.010) | **C++ wins, decisively** |
+| FIX **same-source** | Linux | C++ +32% and +34% (p = 0.010) | **C++ wins, decisively** |
+| L2 order book, like-for-like | Windows | [−16.9%, −9.0%] | **C++ wins** |
+| L2 order book, like-for-like | Linux | [−46.6%, −29.5%] | **C++ wins** |
+| L2 order book vs best C# config | Linux | [−29.3%, −5.4%] | **C++ wins** |
+| FIX parser only, no checksum | Windows | [−9.3%, −2.3%] | C++ wins, narrowly |
 
-Strip the checksum out and measure the parser alone (`fix_parse_nosum`, oracle-gated,
-same-source) and **C++ is still 5.2–9.5% ahead** (raw p = 0.036 and 0.009).
+**Same-source is the headline, and it is the most stable number in the repo**: C++ is
+32–39% faster on both platforms, both compilers, and both independent matrices. The
+cause is visible in the emitted assembly — MSVC auto-vectorizes the scalar byte-sum loop
+(`vpmovzxbd` + `vpaddd`, published in
+[results/asm-msvc1444-evidence.txt](results/asm-msvc1444-evidence.txt)) and RyuJIT does
+not, because .NET has no auto-vectorizer.
+
+### What does NOT reproduce, and why that is the interesting part
+
+Hand-write the same AVX2 kernel on both sides (`fix_parse_simd` against
+`fix_parse_safe_simd`) and the 35% gap collapses — to a size this rig cannot pin down:
+
+| measurement | 95% interval on (C++ − C#) | says |
+| --- | --- | --- |
+| Windows, matrix A | [−2.9%, +4.0%] | a tie |
+| Windows, matrix B | [−9.9%, −7.7%] | C++ ahead ~9% |
+| Linux, GCC native | [+2.6%, +18.8%] | **C# ahead ~7%** |
+
+Three measurements of one pairing, three different answers, including a sign flip between
+two runs of identical binaries. Anything at this scale is inside the machine's own
+run-to-run drift: `between_runs.py` puts the residual spread between two independent
+matrices at a median of 2.7pp and a maximum of 11.1pp.
+
+**So the honest claim is not "C# ties C++". It is: writing ~10 lines of `Vector256` turns
+a reproducible 35% deficit into a difference too small for a pinned, thermally-controlled
+laptop to measure consistently.** Whether the remainder favours C++ or C# depends on which
+platform and which afternoon you ask.
 
 Three findings from the matrix that are worth more than the headline:
 
-- **Stock .NET tiering is bimodal on a loop-shaped hot path, and that is worse than
-  slow.** `fix_parse_safe` on default settings does not land near one number: across 11
-  launches, 5 came in at 125–148 ns/msg and 6 at 966–1011 ns/msg, with nothing between.
-  The published median of 965.92 is a 6-versus-5 coin flip; one launch the other way and
-  it would read 147.5. Disabling `TieredCompilationQuickJitForLoops` removes the slow
-  mode entirely (min 123.76, max 143.90). The honest claim is not "7× slower" — it is
-  "a ~7× penalty that fires on roughly half of process starts", which for a trading
-  system that restarts on failover is the more alarming of the two. The JIT disassembly
-  showing the tier-0 body is at [results/jitdisasm-simdsum.txt](results/jitdisasm-simdsum.txt).
-- **Removing bounds checks with `unsafe` + `fixed` bought nothing detectable.** Safe
-  9.41 vs unsafe 9.56 ns/event on `jit-tc0` (p = 0.819), 8.05 vs 8.14 on `jit-default`
-  (p = 1.000), 9.36 vs 9.36 on `aot` (p = 1.000). An earlier version of this README said
-  `unsafe` made C# *slower*; that was a directional claim on p = 0.819, which this
-  repo's own rule forbids, and it also cited `fix_parse_unsafe` — a benchmark with zero
-  process launches. Both are retracted.
-- **Suppressing the GC changed nothing** (1–3%, inside noise) once the hot path allocates
-  zero bytes. Read this as weaker than it looks: `TryStartNoGCRegion` reserves a budget
-  rather than disabling collection, and the result files written before 2026-08-06 do not
-  record whether the region was actually live.
+- **Stock .NET tiering costs ~7× on a loop-shaped hot path, and it fires on most process
+  starts.** `fix_parse_safe` runs at 964.13 ns/msg on default settings against 124.85
+  with `TieredCompilationQuickJitForLoops` disabled — **7.72×**. Across the two
+  independent matrices the slow mode hit **17 of 22 launches**; matrix A was bimodal (5
+  fast at 125–148, 6 slow at 966–1011, nothing between) and matrix B was slow on all 11.
+  For a trading system that reloads on failover, "usually 7× slower, occasionally not" is
+  a worse property than a constant 7×. The tier-0 disassembly is at
+  [results/jitdisasm-simdsum.txt](results/jitdisasm-simdsum.txt).
+  **Microsoft's own documentation says this knob defaults to off** — *"If you omit this
+  setting, quick JIT is not used for methods that contain loops"* — but that page carries
+  `ms.date: 2021-10-29`, and the runtime source sets the default to `1` whenever
+  `FEATURE_ON_STACK_REPLACEMENT` is defined, which it is. The measurement agrees with the
+  source, not the doc.
+- **Removing bounds checks with `unsafe` + `fixed` never made C# faster, and sometimes
+  made it measurably slower.** Matrix A found no detectable difference (p = 0.819, 1.000,
+  1.000). Matrix B found `unsafe` **slower** on two configs of three: 8.42 vs 9.33
+  ns/event on `jit-tc0` (p = 0.001) and 7.69 vs 8.63 on `jit-default` (p = 0.018), with
+  `aot` indifferent (p = 0.312). Pinning inhibits optimizations that a plain managed `ref`
+  does not, and the safe, bounds-checked code was never the loser. (An earlier README also
+  cited `fix_parse_unsafe` here — a benchmark with zero process launches. Retracted.)
+- **Suppressing the GC changed nothing** once the hot path allocates zero bytes:
+  −2.2% on `fix_parse_safe_simd` (p = 0.669) and +0.2% on `orderbook_l2_opt2` (p = 0.730).
+  Note that `TryStartNoGCRegion` reserves a budget rather than disabling collection; the
+  result files now record `noGcActive` and the latency mode sampled *inside* the timed
+  region, so this is no longer taken on trust.
 
 ## What makes this comparison trustworthy
 

@@ -29,8 +29,11 @@ AOT="$WORK/build/aot/bench-csharp"
 command -v taskset >/dev/null || { echo "[error] taskset not found"; exit 1; }
 mkdir -p "$WORK/results"
 
-CPP_BENCH="orderbook_l2 fix_parse fix_parse_simd"
-CS_BENCH="orderbook_l2_safe orderbook_l2_opt2 fix_parse_safe fix_parse_safe_simd"
+# fix_parse_nosum added 2026-08-06: it is the oracle-gated, same-source pairing that
+# isolates the parser from the CheckSum byte-sum, and it was Windows-only, which left the
+# "strip the checksum and C++ is still ahead" reading with no cross-platform check.
+CPP_BENCH="orderbook_l2 fix_parse fix_parse_simd fix_parse_nosum"
+CS_BENCH="orderbook_l2_safe orderbook_l2_opt2 fix_parse_safe fix_parse_safe_simd fix_parse_nosum"
 
 # tag|exe|benchlist|mode
 #   mode: none | tc0 | qjfl | qjflnogc
