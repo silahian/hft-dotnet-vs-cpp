@@ -44,7 +44,9 @@ per config:   L independent process launches, in randomized order
                           L = 11 it is 98.8%, not 95%)
 ```
 
-Defaults: `W = 40`, `S = 15`, `L = 7`.
+Defaults: `W = 40`, `S = 15`, `L = 11`. `analyze.py` refuses to report any cell with
+fewer than 11 launches (`MIN_LAUNCHES`), so a run with `-Launches 7` produces an empty
+table rather than a weaker one.
 
 ### 4.1 CORRECTION 1 — series inside a process are not independent samples
 
@@ -126,20 +128,46 @@ Everything else is a diagnostic and is reported in a separate, non-comparative t
 actually does. This exists because the first two versions of the book generator did
 **not** do what their comments claimed, and only replay caught it.
 
-| | v1 (shipped, wrong) | current |
+| | v1 (shipped, wrong) | v4 (shipped, current) |
 | --- | --- | --- |
-| rescans triggered | 0.26% of events | **10.39%** |
-| rescan inner iterations | 0.0093 / event | **0.0475** |
-| distinct ticks touched | 250 of 4096 (6%) | **8,127 of 8,192 (99.2%)** |
-| top-of-book updates | 0.28% of events | **24.72%** |
-| touched footprint | ~4 KB (L1-resident) | **130 KB (exceeds L1)** |
+| rescans triggered | 0.26% of events | **10.72%** |
+| rescan inner iterations | 0.0093 / event | **0.0471** |
+| top-of-book updates | 0.28% of events | **25.40%** |
+| distinct ticks touched | 250 of 4096 (6%) | **160 of 8,192 (2.0%)** |
+| tick range | — | **4011 .. 4173 (163 ticks)** |
+| resident in the last 10% | — | **15 cache lines (960 bytes)** |
+| 95% of late accesses | — | **8 cache lines (512 bytes)** |
 
 v1's comment said "deletes at the touch force the rescan; that is the point" — but the
 rescan fired on 1 event in 382, so the branch the workload was built around was
 effectively dead and the benchmark was really measuring branch-mispredict latency,
 which no language can differentiate on. The generator now runs the same state machine
 the consumer runs, so it always knows where the touch actually is, and the touch
-performs an unbiased random walk driven by its own levels being consumed and replenished.
+performs a random walk driven by its own levels being consumed and replenished.
+
+### 7.1 CORRECTION 3 — this table previously claimed a footprint the fixture does not have
+
+Until 2026-08-06 the right-hand column read **"8,127 of 8,192 (99.2%)"** distinct ticks and
+**"130 KB (exceeds L1)"**. Both were wrong — by 50× and 138× respectively. They were the v4
+generator's *design targets*, written into the table and never replaced with the replay
+output after v4 actually ran. The three behavioural rows above were correct all along, which
+is precisely why the error survived: the table looked verified because most of it was.
+
+**The correct reading is the opposite of what this section used to assert.** The restoring
+bias and the hard spread cap that were added to stop the v3 generator stalling at the ladder
+edge (`DataGen.cs`) also pin the touch inside a 163-tick band. The whole million-event run
+lives in under 2 KB and never leaves L1.
+
+Consequence for every order-book number in this repo: **the order-book benchmark contains no
+memory hierarchy.** It measures ALU, branch and store throughput on a working set that fits
+in L1 several times over. That is the configuration that maximally exposes per-element
+bounds-check overhead and raw codegen quality, and it is the configuration least like a real
+book under load. The order-book results are still a valid like-for-like comparison of the two
+languages on identical work — they are not evidence about cache-resident behaviour in
+production, and this section previously implied that they were. See limitation 9 in §8.
+
+Multi-symbol interleaving is the fix that would put real cache pressure in the workload. It
+is not built.
 
 ## 8. Known, disclosed limitations
 
@@ -159,13 +187,38 @@ performs an unbiased random walk driven by its own levels being consumed and rep
 7. **Two workloads only.** Nothing here measures GC pause behaviour, tail latency under
    allocation churn, startup, or memory footprint. No claim is made about them.
 8. **One machine, one microarchitecture.**
+9. **The order-book workload is L1-resident.** 163 distinct ticks, under 2 KB touched
+   across a million events, 15 cache lines resident in the last decile. See §7.1. No
+   order-book number here says anything about cache behaviour.
+10. **The two C++ builds are not equally hardened-off.** MSVC gets `/GS-`; the GCC build
+    does not pass `-fno-stack-protector`, and Ubuntu's g++ defaults to
+    `-fstack-protector-strong`. GCC also links `memchr`/`memset` through the PLT. The
+    GCC side is therefore mildly handicapped relative to MSVC. Both C++ builds still
+    beat C# on the order book, so this does not flip a verdict — it means the C++
+    order-book margin is a floor, not a ceiling.
+11. **ISA targeting is not symmetric.** GCC gets `-march=native`; MSVC gets generic
+    `/arch:AVX2`; RyuJIT compiles for the actual CPU, so the JIT configs effectively get
+    `-march=native` on both platforms; NativeAOT is pinned to `x86-64-v3`. §8.6 discloses
+    the PGO asymmetry; this is the ISA one.
+12. **Two C++ compilers, not four.** `lnx-gcc-native` and `lnx-gcc-v3` are the same GCC
+    13.3 with different `-march`. Counting them as separate compilers overstates the
+    coverage.
 
 ## 9. Fairness rules applied to the implementations
 
 - Same algorithm, same data structure, same memory layout, same element types, audited
   statement by statement.
-- No standard-library strawmen. `memchr` is paired against `Span<byte>.IndexOf` — both
-  vectorized, both handed the same remainder slice.
+- No standard-library strawmen. `memchr` is paired against `Span<byte>.IndexOf`, both
+  handed the same remainder slice. **Corrected 2026-08-06:** this bullet used to add
+  "both vectorized", which is asserted, not verified, and the shipped artifacts point the
+  other way. `build/asm-msvc1444/main.cod` carries `EXTRN memchr:PROC` and two `call
+  memchr` sites — under `/MT` that is an out-of-line static-CRT call, and `/Oi` does not
+  intrinsify it — while RyuJIT inlines `IndexOf` into the caller. The trace counters put
+  the volume at 3,000,000 scan calls per rep to find a byte a mean 5.61 positions away.
+  This asymmetry runs **against C++** in the one pairing where the two languages come out
+  level, so the FIX equal-effort result should be read as C++'s floor, not its ceiling.
+  Settling it needs either a disassembly of the UCRT and glibc `memchr` bodies or a C++
+  variant with a hand-inlined vector scan. Neither is in the repo.
 - Both sides allocation-free in steady state; the C# allocation counter is published.
 - Optimization flags are recorded verbatim in each result file, including the **actual**
   `DOTNET_TieredCompilation` environment value. (Previously this was read from

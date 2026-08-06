@@ -22,7 +22,7 @@ param(
     [int]$Core     = 11,
     [int]$Warmup   = 40,
     [int]$Series   = 15,
-    [int]$Launches = 7,
+    [int]$Launches = 11,   # analyze.py's MIN_LAUNCHES; fewer produces an empty table
     [int]$Cooldown = 6,
     [int]$Seed     = 20260806
 )
@@ -33,19 +33,29 @@ $results = Join-Path $root 'results'
 New-Item -ItemType Directory -Force -Path $results | Out-Null
 
 $cppBench = @('orderbook_l2', 'fix_parse', 'fix_parse_simd', 'fix_parse_nosum')
-$csBench  = @('orderbook_l2_safe', 'orderbook_l2_opt', 'orderbook_l2_unsafe',
+$csBench  = @('orderbook_l2_safe', 'orderbook_l2_opt', 'orderbook_l2_opt2', 'orderbook_l2_unsafe',
               'fix_parse_safe', 'fix_parse_safe_simd', 'fix_parse_safe_simd_create',
               'fix_parse_opt', 'fix_parse_opt_simd', 'fix_parse_nosum')
+
+# The qjfl configs run a narrower set: they exist to isolate the tiering knob and the
+# NoGC region, not to re-measure every variant.
+$csBenchQjfl = @('orderbook_l2_safe', 'orderbook_l2_opt2', 'fix_parse_safe', 'fix_parse_safe_simd')
 
 $csExe  = "$root\src\csharp\Bench.Runner\bin\Release\net10.0\bench-csharp.exe"
 $aotExe = "$root\build\aot\bench-csharp.exe"
 
+# Until 2026-08-06 this list held only five configs, while SUMMARY.md published seven
+# Windows columns -- jit-qjfl, jit-qjfl-nogc and the orderbook_l2_opt2 rows were produced
+# by ad-hoc invocations that were never written back here, so the repo could not
+# reproduce four of its own published columns. Added.
 $configs = @(
-    @{ Tag = 'cpp-msvc1444'; Exe = "$root\build\cpp-msvc1444\bench-cpp.exe"; Bench = $cppBench; Env = $null },
-    @{ Tag = 'cpp-msvc1451'; Exe = "$root\build\cpp-msvc1451\bench-cpp.exe"; Bench = $cppBench; Env = $null },
-    @{ Tag = 'jit-default';  Exe = $csExe;  Bench = $csBench; Env = $null },
-    @{ Tag = 'jit-tc0';      Exe = $csExe;  Bench = $csBench; Env = @{ DOTNET_TieredCompilation = '0' } },
-    @{ Tag = 'aot';          Exe = $aotExe; Bench = $csBench; Env = $null }
+    @{ Tag = 'cpp-msvc1444';   Exe = "$root\build\cpp-msvc1444\bench-cpp.exe"; Bench = $cppBench;    Env = $null; Args = @() },
+    @{ Tag = 'cpp-msvc1451';   Exe = "$root\build\cpp-msvc1451\bench-cpp.exe"; Bench = $cppBench;    Env = $null; Args = @() },
+    @{ Tag = 'jit-default';    Exe = $csExe;  Bench = $csBench;     Env = $null; Args = @() },
+    @{ Tag = 'jit-tc0';        Exe = $csExe;  Bench = $csBench;     Env = @{ DOTNET_TieredCompilation = '0' };   Args = @() },
+    @{ Tag = 'jit-qjfl';       Exe = $csExe;  Bench = $csBenchQjfl; Env = @{ DOTNET_TC_QuickJitForLoops = '0' }; Args = @() },
+    @{ Tag = 'jit-qjfl-nogc';  Exe = $csExe;  Bench = $csBenchQjfl; Env = @{ DOTNET_TC_QuickJitForLoops = '0' }; Args = @('--nogc') },
+    @{ Tag = 'aot';            Exe = $aotExe; Bench = $csBench;     Env = $null; Args = @() }
 )
 
 foreach ($c in $configs) {
@@ -74,8 +84,9 @@ foreach ($t in $tasks) {
 
     if ($c.Env) { foreach ($k in $c.Env.Keys) { Set-Item -Path "Env:$k" -Value $c.Env[$k] } }
     try {
+        $extra = if ($c.Args) { $c.Args } else { @() }
         $line = & $c.Exe run --core $Core --warmup $Warmup --series $Series `
-                             --only $t.Bench --tag $c.Tag --out $out 2>&1 |
+                             --only $t.Bench @extra --tag $c.Tag --out $out 2>&1 |
                 Select-String 'median='
         if ($LASTEXITCODE -ne 0) { throw "$($c.Tag)/$($t.Bench) exited $LASTEXITCODE" }
         Write-Host ("[{0,4}/{1}] {2,-14} {3,-28} {4}" -f $n, $tasks.Count, $c.Tag, $t.Bench, ($line -join ' ').Trim())

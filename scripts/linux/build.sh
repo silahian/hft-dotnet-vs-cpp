@@ -28,7 +28,12 @@ cp "$WIN_ROOT/global.json" "$WORK/"
 # Windows-only build intermediates must not leak into the Linux build.
 rm -rf "$WORK"/src/csharp/*/bin "$WORK"/src/csharp/*/obj
 
-CXXBASE="-std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto"
+# -fno-stack-protector matches MSVC's /GS-. Ubuntu's g++ defaults to
+# -fstack-protector-strong, so without this the GCC build carries a per-function guard
+# the MSVC build does not, and the two C++ configs are not equally tuned. Added
+# 2026-08-06; the results committed before that date were produced without it, which
+# handicapped GCC slightly.
+CXXBASE="-std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto -fno-stack-protector -U_FORTIFY_SOURCE"
 
 build_cpp () {
     local tag="$1" arch="$2"

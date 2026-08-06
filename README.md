@@ -13,30 +13,52 @@ practitioner would write them in each language.
 
 ## Headline result
 
-759 process launches, 3 compilers, 2 operating systems, one checksum oracle that every
-implementation has to satisfy before a single timing is printed.
+759 process launches, two C++ compilers, two operating systems, one checksum oracle that
+every implementation has to satisfy before a single timing is printed.
 
-| workload | platform | best C++ | best C# | outcome |
+The load-bearing numbers are **intervals on the difference**, not p-values. A large p
+would not distinguish "the same" from "too noisy to tell"; an interval does. Full table
+in [results/EQUIVALENCE.md](results/EQUIVALENCE.md).
+
+| workload | platform | pairing | 95% interval on (C++ − C#) | reading |
 | --- | --- | --- | --- | --- |
-| FIX 4.4 decode | Windows | 89.05 ns/msg (MSVC 14.51) | 91.27 ns/msg | **statistical tie** (p = 0.579) |
-| FIX 4.4 decode | Linux | 107.18 ns/msg (GCC 13.3) | 96.37 ns/msg | **statistical tie** (p = 1.000) |
-| L2 order book | Windows | 7.61 ns/event (MSVC 14.44) | 8.05 ns/event | C++ ahead ~6%, intervals overlap |
-| L2 order book | Linux | 5.69 ns/event (GCC 13.3) | 7.85 ns/event | **C++ ahead 38%**, clean separation |
+| FIX 4.4 decode | Windows | equal-effort vs MSVC 14.44 | [−2.9%, +4.0%] | **equivalent within ±4%** |
+| FIX 4.4 decode | Windows | equal-effort vs MSVC 14.51 | [−7.1%, +1.4%] | equivalent, but C++ may be 7% ahead |
+| FIX 4.4 decode | Windows | **same-source** | C++ +36% (p ≤ 0.010) | **C++ wins** |
+| FIX 4.4 decode | Linux | equal-effort vs GCC 13.3 | [−6.1%, +8.6%] | **unresolved** — design cannot answer it |
+| L2 order book | Windows | like-for-like (no PGO either side) | [−25.4%, −13.1%] | **C++ wins** |
+| L2 order book | Linux | C++ vs best C# config | [−33.1%, −21.6%] | **C++ wins** |
 
-The C# columns above are best-config, which is a post-hoc selection — the pre-declared
-canonical pairings and their Holm-corrected p-values are in
-[results/SUMMARY.md](results/SUMMARY.md) and are the numbers to quote.
+**"Equal-effort" means both sides hand-write the same PSADBW kernel.** "Same-source"
+means both sides write the obvious scalar loop — and there C++ wins by 36% on Windows,
+because MSVC auto-vectorizes it and RyuJIT does not. The parity result is real and it is
+narrow: it exists on one workload, on one platform, and only after a human writes
+`Vector256` on the C# side.
 
-Three things that came out of the matrix and are worth more than the headline:
+Strip the checksum out and measure the parser alone (`fix_parse_nosum`, oracle-gated,
+same-source) and **C++ is still 5.2–9.5% ahead** (raw p = 0.036 and 0.009).
 
-- **Stock .NET tiering costs 7× on a loop-shaped hot path.** `fix_parse_safe` is 965.92
-  ns/msg on default settings and 132.99 ns/msg with `TieredCompilationQuickJitForLoops`
-  disabled. The JIT disassembly showing the tier-0 body is checked in at
-  [results/jitdisasm-simdsum.txt](results/jitdisasm-simdsum.txt).
-- **`unsafe` and pinning made C# slower, not faster,** in every variant tried
-  (`orderbook_l2_unsafe`, `fix_parse_unsafe`). The safe, bounds-checked code wins.
-- **Suppressing the GC entirely changes nothing** (1–3%, inside noise) once the hot path
-  allocates zero bytes — which the harness proves rather than assumes.
+Three findings from the matrix that are worth more than the headline:
+
+- **Stock .NET tiering is bimodal on a loop-shaped hot path, and that is worse than
+  slow.** `fix_parse_safe` on default settings does not land near one number: across 11
+  launches, 5 came in at 125–148 ns/msg and 6 at 966–1011 ns/msg, with nothing between.
+  The published median of 965.92 is a 6-versus-5 coin flip; one launch the other way and
+  it would read 147.5. Disabling `TieredCompilationQuickJitForLoops` removes the slow
+  mode entirely (min 123.76, max 143.90). The honest claim is not "7× slower" — it is
+  "a ~7× penalty that fires on roughly half of process starts", which for a trading
+  system that restarts on failover is the more alarming of the two. The JIT disassembly
+  showing the tier-0 body is at [results/jitdisasm-simdsum.txt](results/jitdisasm-simdsum.txt).
+- **Removing bounds checks with `unsafe` + `fixed` bought nothing detectable.** Safe
+  9.41 vs unsafe 9.56 ns/event on `jit-tc0` (p = 0.819), 8.05 vs 8.14 on `jit-default`
+  (p = 1.000), 9.36 vs 9.36 on `aot` (p = 1.000). An earlier version of this README said
+  `unsafe` made C# *slower*; that was a directional claim on p = 0.819, which this
+  repo's own rule forbids, and it also cited `fix_parse_unsafe` — a benchmark with zero
+  process launches. Both are retracted.
+- **Suppressing the GC changed nothing** (1–3%, inside noise) once the hot path allocates
+  zero bytes. Read this as weaker than it looks: `TryStartNoGCRegion` reserves a budget
+  rather than disabling collection, and the result files written before 2026-08-06 do not
+  record whether the region was actually live.
 
 ## What makes this comparison trustworthy
 
@@ -53,7 +75,15 @@ Three things that came out of the matrix and are worth more than the headline:
   benchmarks per process carries more heat, and position confounds with language.
 - **Canonical comparisons are declared in source before the data is seen**, so "best C#"
   cannot be quietly selected from six correlated rows against one C++ row.
-- **Workload realism is measured, not asserted** (`bench-csharp stats`).
+- **Workload realism is measured, not asserted** (`bench-csharp stats`) — and when the
+  measurement disagreed with the claim, the claim lost. HARNESS.md §7 asserted a 130 KB
+  order-book footprint until the replay showed 1.4 KB; see §7.1 and limitation 9.
+- **35 trace counters prove the two languages do the same work**, not merely produce the
+  same answer. They cover every branch, loop iteration and switch arm of the parse and
+  ladder loops, and match exactly across both languages and both operating systems. They
+  do **not** cover the checksum kernel, the SOH-scan implementation, array zeroing, or
+  bounds checks — those were audited by reading the source, and identical counters do not
+  by themselves imply identical work.
 
 Full methodology, including two corrections where earlier versions of this harness were
 wrong, is in [HARNESS.md](HARNESS.md).
@@ -83,7 +113,7 @@ scripts\build-cpp.cmd 2022          rem MSVC 14.44
 scripts\build-cpp.cmd 18            rem MSVC 14.51
 scripts\build-csharp.cmd            rem JIT + NativeAOT
 src\csharp\Bench.Runner\bin\Release\net10.0\bench-csharp.exe gen
-powershell -File scripts\run-matrix.ps1 -Core 11 -Launches 7
+powershell -File scripts\run-matrix.ps1 -Core 11 -Launches 11
 python scripts\analyze.py
 ```
 
@@ -92,7 +122,7 @@ Linux / WSL:
 ```
 bash scripts/linux/setup.sh         # installs .NET into $HOME, no sudo
 bash scripts/linux/build.sh         # g++ -O3 -march=native, plus C# JIT + AOT
-bash scripts/linux/run-matrix.sh 11 40 15 7 6
+bash scripts/linux/run-matrix.sh 11 40 15 11 6   # core warmup series launches cooldown
 ```
 
 Pick the pinned core from `bench-cpp probe --cores 16`, which reports the Windows
@@ -115,7 +145,11 @@ neither side has profile data.
 
 ## Results
 
-See [results/SUMMARY.md](results/SUMMARY.md), regenerated by `scripts/analyze.py`.
+- [results/SUMMARY.md](results/SUMMARY.md) — every cell, every config, plus the
+  pre-declared canonical verdicts. Regenerated by `scripts/analyze.py`.
+- [results/EQUIVALENCE.md](results/EQUIVALENCE.md) — intervals on the difference, which
+  is what you need to tell an equivalence result apart from an underpowered one.
+  Regenerated by `scripts/equivalence.py`. **Read this before quoting any "tie".**
 
 Read [HARNESS.md](HARNESS.md) §8 before quoting any number from this repo. In particular:
 this runs on a thermally constrained laptop, the Linux runs are inside WSL2, there is no

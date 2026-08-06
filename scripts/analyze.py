@@ -36,8 +36,13 @@ RESULTS = ROOT / "results"
 # Benchmarks that must agree on the checksum oracle. Names differ between runners, so
 # equivalence is declared explicitly rather than inferred.
 ORACLE_GROUPS = {
+    # orderbook_l2_opt2 was missing here until 2026-08-06 while being published as the
+    # C# side of the "order book / tuned C#" canonical pairing -- a comparative result
+    # sitting outside the gate that is supposed to make comparison legal at all. It
+    # passes (every orderbook_l2* name emits 0x1C1B44A5898F65EC), but nothing would have
+    # caught it if it had not.
     "orderbook": ["orderbook_l2", "orderbook_l2_safe", "orderbook_l2_opt",
-                  "orderbook_l2_unsafe"],
+                  "orderbook_l2_opt2", "orderbook_l2_unsafe"],
     "fix_validating": [
         "fix_parse", "fix_parse_simd",
         "fix_parse_safe", "fix_parse_safe_simd", "fix_parse_safe_simd_create",
@@ -83,9 +88,21 @@ def permutation_test_median_diff(a: list[float], b: list[float]) -> float:
     """
     Exact two-sided permutation test on the difference of medians.
 
-    With n=7 per side there are C(14,7)=3432 splits, so this is enumerated exactly
-    rather than sampled. Replaces the previous "do the 95% intervals overlap" rule,
-    which is not a test of a difference and was anti-conservative here.
+    Exact enumeration when the split count is small enough, otherwise sampled. At the
+    n=11 this repo actually runs, C(22,11) = 705,432 exceeds the 200,000 threshold, so
+    THE SAMPLED BRANCH IS THE ONE THAT EXECUTES and the resolution floor is 1/20001,
+    not 2/C(22,11). An earlier version of this docstring described the exact branch as
+    though it were the live one, and the generated footnote inherited the error.
+
+    Replaces the previous "do the 95% intervals overlap" rule, which is not a test of a
+    difference and was anti-conservative here.
+
+    Note on what the null actually is: the permutation null is exchangeability, i.e.
+    identical distributions, not merely equal medians. Dispersions here are unequal
+    (19% spread against 8% on the Windows equal-effort cell), so a rejection can be
+    driven by scale as well as by location. Read a rejection as "these came from
+    different distributions", and get the size of the location difference from
+    scripts/equivalence.py rather than from this p-value.
     """
     from itertools import combinations
 
@@ -286,7 +303,11 @@ def main() -> int:
     print(f"C# side is the declared canonical config per platform "
           f"(fully optimized, no profile data). "
           f"Intervals are distribution-free order-statistic intervals; their ACTUAL "
-          f"coverage is shown, and it is not 95% at n=7.\n")
+          f"coverage is shown below and is not 95%.\n")
+    print("**A large p here means 'not distinguished', which is not the same as 'the "
+          "same'.** For the size of each difference, and for whether a non-rejection is "
+          "an equivalence result or merely an underpowered one, see "
+          "[EQUIVALENCE.md](EQUIVALENCE.md).\n")
     print("| platform | pairing | C++ config | C++ ns/op [interval] | C# ns/op [interval] "
           "| diff | p (Holm) | verdict |")
     print("|---|---|---|---|---|---|---|---|")
@@ -306,10 +327,16 @@ def main() -> int:
     cov = next((t["cpp"]["coverage"] for t in tests), 0.0)
     print(f"> Interval coverage at n={MIN_LAUNCHES} is **{cov * 100:.1f}%**, not 95%. "
           f"Verdicts come from the permutation test, not from interval overlap.\n")
-    print(f"> Minimum attainable two-sided p with n={MIN_LAUNCHES} per side is "
-          f"{2.0 / math.comb(2 * MIN_LAUNCHES, MIN_LAUNCHES):.4f}; after Holm across "
-          f"{len(tests)} cells the smallest reportable adjusted p is "
-          f"{min(1.0, 2.0 / math.comb(2 * MIN_LAUNCHES, MIN_LAUNCHES) * len(tests)):.4f}.\n")
+    splits = math.comb(2 * MIN_LAUNCHES, MIN_LAUNCHES)
+    exact = splits <= 200_000
+    floor = 2.0 / splits if exact else 1.0 / 20001
+    branch = "exact enumeration" if exact else f"sampling ({splits:,} splits > 200,000 threshold)"
+    print(f"> The test ran by {branch}, so the resolution floor on a two-sided p is "
+          f"{floor:.2e}; after Holm across {len(tests)} cells the smallest reportable "
+          f"adjusted p is {min(1.0, floor * len(tests)):.2e}.\n")
+    print("> The Holm family is redundant by construction: the same 11 C# launches are "
+          "reused against both C++ compilers, so roughly 6 independent comparisons are "
+          "being corrected as if there were 14. That direction is conservative.\n")
 
     # ---------------------------------------------------------------- full tables
     for plat, (cpp_cfgs, cs_cfgs, _canon) in PLATFORMS.items():

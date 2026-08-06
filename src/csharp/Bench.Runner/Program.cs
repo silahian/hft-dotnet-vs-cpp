@@ -256,6 +256,13 @@ public static class Program
             .Select(c => Harness.Measure(c.Name, c.Ops, warmup, series, reps, c.Body))
             .ToList();
 
+        // Sampled HERE, while the region is still open. ToJson runs after EndNoGCRegion,
+        // so reading GCSettings.LatencyMode there reported "Batch" for every --nogc run --
+        // the artifact could not tell a working NoGC region from one that silently failed
+        // to start, which is the same class of self-refuting-provenance bug as the
+        // AppContext one below.
+        string latencyModeDuringRun = System.Runtime.GCSettings.LatencyMode.ToString();
+
         if (noGcActive)
         {
             try
@@ -273,10 +280,17 @@ public static class Program
         string EnvOr(string name, string dflt) =>
             Environment.GetEnvironmentVariable(name) is { Length: > 0 } v ? v : dflt;
 
+        // DOTNET_TC_QuickJitForLoops and the NoGC state were both absent from this string
+        // until 2026-08-06, which meant jit-default, jit-qjfl and jit-qjfl-nogc emitted
+        // byte-identical provenance. Two of this repo's headline findings rest on exactly
+        // those two knobs, so their artifacts carried no evidence the knob was applied.
         string flags =
             $"DOTNET_TieredCompilation={EnvOr("DOTNET_TieredCompilation", "(unset->default on)")}; " +
+            $"DOTNET_TC_QuickJitForLoops={EnvOr("DOTNET_TC_QuickJitForLoops", "(unset->default on)")}; " +
             $"DOTNET_TieredPGO={EnvOr("DOTNET_TieredPGO", "(unset->default on)")}; " +
             $"DOTNET_ReadyToRun={EnvOr("DOTNET_ReadyToRun", "(unset->default on)")}; " +
+            $"noGcRequested={noGc}; noGcActive={noGcActive}; " +
+            $"latencyModeDuringRun={latencyModeDuringRun}; " +
             $"codegen={Harness.DescribeRuntime()}";
         string json = Harness.ToJson(tag, flags, core, results, probe);
 
