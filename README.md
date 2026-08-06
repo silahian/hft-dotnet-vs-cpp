@@ -81,8 +81,11 @@ Three findings from the matrix that are worth more than the headline:
   made it measurably slower.** Matrix A found no detectable difference (p = 0.819, 1.000,
   1.000). Matrix B found `unsafe` **slower** on two configs of three: 8.42 vs 9.33
   ns/event on `jit-tc0` (p = 0.001) and 7.69 vs 8.63 on `jit-default` (p = 0.018), with
-  `aot` indifferent (p = 0.312). Pinning inhibits optimizations that a plain managed `ref`
-  does not, and the safe, bounds-checked code was never the loser. (An earlier README also
+  `aot` indifferent (p = 0.312). No disassembly here isolates the mechanism; the plausible
+  story is that `fixed` pins the array and pinning inhibits optimizations a plain managed
+  `ref` does not, but that is inferred from timing, and this row is the least reproducible
+  cell in the matrix (11.1pp residual between runs). Read it as "`unsafe` bought nothing,
+  twice", not as "pinning is why". (An earlier README also
   cited `fix_parse_unsafe` here — a benchmark with zero process launches. Retracted.)
 - **Suppressing the GC changed nothing** once the hot path allocates zero bytes:
   −2.2% on `fix_parse_safe_simd` (p = 0.669) and +0.2% on `orderbook_l2_opt2` (p = 0.730).
@@ -186,7 +189,7 @@ this runs on a thermally constrained laptop, the Linux runs are inside WSL2, the
 clang, and nothing here measures GC pauses, tail latency, startup, or memory footprint.
 
 The raw evidence is committed, not just the summary: `results/proc-*.json` is one file per
-process launch, 759 of them, each with its own checksum, allocation counters and full
+process launch, 869 of them, each with its own checksum, allocation counters and full
 series vector. Re-run `python scripts/analyze.py` against them to reproduce every table
 without rebuilding anything.
 
