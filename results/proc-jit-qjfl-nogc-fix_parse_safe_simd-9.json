@@ -1,0 +1,26 @@
+{
+  "lang": "csharp",
+  "runtime": "jit-qjfl-nogc",
+  "codegen": "jit",
+  "frameworkDescription": ".NET 10.0.10",
+  "runtimeIdentifier": "win-x64",
+  "processArchitecture": "X64",
+  "osDescription": "Microsoft Windows 10.0.26200",
+  "serverGC": false,
+  "gcLatencyMode": "Batch",
+  "flags": "DOTNET_TieredCompilation=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); codegen=jit",
+  "pinnedCore": 11,
+  "stopwatchFrequency": 10000000,
+  "isHighResolution": true,
+  "benchmarks": [
+    {
+      "name": "fix_parse_safe_simd",
+      "checksum": "0x5D30C4CE35A0F200",
+      "opsPerRep": 200000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 144,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [93.120500, 94.646000, 93.999000, 91.841000, 95.334500, 98.909500, 94.829000, 93.306000, 96.820500, 98.029000, 97.934500, 99.681000, 97.828000, 95.588500, 97.304500]
+    }
+  ]
+}

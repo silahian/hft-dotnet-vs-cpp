@@ -1,0 +1,20 @@
+{
+  "lang": "cpp",
+  "runtime": "cpp-msvc1451",
+  "codegen": "native",
+  "compiler": "MSVC 195136252",
+  "platform": "windows",
+  "flags": "/nologo /std:c++20 /EHsc /permissive- /Zc:inline /O2 /Oi /Ot /Oy /GL /Gw /GS- /arch:AVX2 /fp:fast /DNDEBUG /MT | link /LTCG /OPT:REF /OPT:ICF",
+  "pinnedCore": 11,
+  "benchmarks": [
+    {
+      "name": "fix_parse_simd",
+      "checksum": "0x5D30C4CE35A0F200",
+      "opsPerRep": 200000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 0,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [99.831500, 103.637000, 100.422500, 99.392500, 100.512500, 101.296000, 101.044500, 103.132500, 100.502500, 101.119500, 100.625000, 99.718500, 101.727500, 101.993500, 100.021500]
+    }
+  ]
+}

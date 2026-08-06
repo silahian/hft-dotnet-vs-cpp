@@ -1,0 +1,26 @@
+{
+  "lang": "csharp",
+  "runtime": "aot",
+  "codegen": "nativeaot",
+  "frameworkDescription": ".NET 10.0.10",
+  "runtimeIdentifier": "win-x64",
+  "processArchitecture": "X64",
+  "osDescription": "Microsoft Windows 10.0.26200",
+  "serverGC": false,
+  "gcLatencyMode": "Batch",
+  "flags": "DOTNET_TieredCompilation=(unset->default on); DOTNET_TieredPGO=(unset->default on); DOTNET_ReadyToRun=(unset->default on); codegen=nativeaot",
+  "pinnedCore": 11,
+  "stopwatchFrequency": 10000000,
+  "isHighResolution": true,
+  "benchmarks": [
+    {
+      "name": "fix_parse_safe_simd",
+      "checksum": "0x5D30C4CE35A0F200",
+      "opsPerRep": 200000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 184,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [109.664000, 107.154000, 105.040000, 103.166000, 105.087000, 102.270000, 109.417500, 116.043500, 100.788500, 100.604000, 97.383500, 97.369500, 100.664000, 98.078000, 98.403500]
+    }
+  ]
+}

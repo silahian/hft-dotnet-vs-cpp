@@ -1,0 +1,20 @@
+{
+  "lang": "cpp",
+  "runtime": "cpp-msvc1451",
+  "codegen": "native",
+  "compiler": "MSVC 195136252",
+  "platform": "windows",
+  "flags": "/nologo /std:c++20 /EHsc /permissive- /Zc:inline /O2 /Oi /Ot /Oy /GL /Gw /GS- /arch:AVX2 /fp:fast /DNDEBUG /MT | link /LTCG /OPT:REF /OPT:ICF",
+  "pinnedCore": 11,
+  "benchmarks": [
+    {
+      "name": "orderbook_l2",
+      "checksum": "0x1C1B44A5898F65EC",
+      "opsPerRep": 1000000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 0,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [8.685300, 8.569300, 8.464700, 8.893600, 9.279200, 9.149400, 10.505600, 9.155000, 8.821300, 8.486800, 8.544500, 8.646200, 8.578700, 8.208200, 8.612000]
+    }
+  ]
+}

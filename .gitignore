@@ -1,0 +1,23 @@
+# Generated fixtures -- ~44 MB, rebuilt by `bench-csharp gen`
+data/
+
+# Build output
+build/
+bin/
+obj/
+*.exe
+*.pdb
+*.obj
+*.ilk
+*.o
+*.a
+*.so
+
+# Ad-hoc single-run diagnostics from the exploratory phase.
+# The matrix is results/proc-*.json; analyze.py reads only those.
+results/_*.json
+
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+{
+  "lang": "cpp",
+  "runtime": "lnx-gcc-native",
+  "codegen": "native",
+  "compiler": "gcc 13.3.0",
+  "platform": "linux",
+  "flags": "g++ -std=c++20 -O3 -DNDEBUG -fomit-frame-pointer -flto=auto -march=native",
+  "pinnedCore": 11,
+  "benchmarks": [
+    {
+      "name": "orderbook_l2",
+      "checksum": "0x1C1B44A5898F65EC",
+      "opsPerRep": 1000000,
+      "repsPerSeries": 1,
+      "allocatedBytes": 0,
+      "gen0Collections": 0,
+      "nsPerOpSeries": [6.013996, 5.953932, 5.872767, 6.320657, 5.776534, 6.447720, 6.090637, 6.963478, 6.487677, 5.871604, 7.763393, 6.482078, 6.024359, 6.543587, 5.820253]
+    }
+  ]
+}
