@@ -25,7 +25,7 @@ WHAT IT REPORTS.
      whether the two runs agree on direction and magnitude.
 
 Usage: python scripts/between_runs.py <git-ref-of-run-A>
-       python scripts/between_runs.py c2ffe18
+       python scripts/between_runs.py 19e7c66
 """
 
 from __future__ import annotations

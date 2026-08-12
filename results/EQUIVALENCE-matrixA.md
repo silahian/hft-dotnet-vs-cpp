@@ -1,7 +1,7 @@
 # EQUIVALENCE, matrix A (the earlier, superseded run)
 
 `results/EQUIVALENCE.md` bounds the difference for the **current** matrix. This file does
-the same for the **earlier** matrix, the one archived at commit `c2ffe18`, because the two
+the same for the **earlier** matrix, the one archived at commit `19e7c66`, because the two
 runs disagree and the disagreement is itself a published result.
 
 Why it is here: `REPRODUCIBILITY.md` compares the two matrices as point estimates. It does
@@ -12,7 +12,7 @@ Reproduce it exactly:
 
 ```bash
 mkdir -p /tmp/matrixA && cp -r scripts /tmp/matrixA/
-git archive c2ffe18 results | tar -x -C /tmp/matrixA
+git archive 19e7c66 results | tar -x -C /tmp/matrixA
 cd /tmp/matrixA && python scripts/equivalence.py
 ```
 
