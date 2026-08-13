@@ -94,6 +94,56 @@ public static class Program
             ? "tuned(opt2)-vs-baseline C#: counters and checksums IDENTICAL"
             : "tuned(opt2)-vs-baseline C#: **DIVERGENCE** -- tuning changed the work done");
 
+        // opt3 (zero-extended indices) must be a pure codegen change: counters and
+        // checksum both strictly identical.
+        TraceCounters.Reset();
+        ulong bookOpt3Sum = OrderBookWorkload.RunOpt3<CountTrace>(book.Events, bid, ask);
+        var opt3Counters = (long[])TraceCounters.Values.Clone();
+
+        TraceCounters.Reset();
+        OrderBookWorkload.Run<CountTrace>(book.Events, bid, ask);
+
+        bool opt3Matches = bookOpt3Sum == bookSum;
+        for (int i = 0; i <= TraceCounters.BookMix; i++)
+            if (opt3Counters[i] != TraceCounters.Values[i]) opt3Matches = false;
+
+        Console.WriteLine(opt3Matches
+            ? "tuned(opt3)-vs-baseline C#: counters and checksums IDENTICAL"
+            : "tuned(opt3)-vs-baseline C#: **DIVERGENCE** -- tuning changed the work done");
+
+        // opt4 replaces the two top-of-book validity branches with sentinel-slot reads.
+        // The CHECKSUM must be identical, but bestask_valid is EXPECTED to differ by
+        // exactly +1: the baseline skips that read on the one event where
+        // bestAsk == tickCount, whereas opt4 always performs it and reads a zero
+        // sentinel. Any other divergence is a real bug.
+        var vBidP1 = new long[book.TickCount + 1];
+        var vAskP1 = new long[book.TickCount + 1];
+
+        TraceCounters.Reset();
+        ulong bookOpt4Sum = OrderBookWorkload.RunOpt4<CountTrace>(book.Events, vBidP1, vAskP1);
+        var opt4Counters = (long[])TraceCounters.Values.Clone();
+
+        TraceCounters.Reset();
+        OrderBookWorkload.Run<CountTrace>(book.Events, bid, ask);
+
+        bool opt4ChecksumOk = bookOpt4Sum == bookSum;
+        var opt4Deltas = new List<string>();
+        for (int i = 0; i <= TraceCounters.BookMix; i++)
+        {
+            long d = opt4Counters[i] - TraceCounters.Values[i];
+            if (d != 0) opt4Deltas.Add($"slot{i}{(d > 0 ? "+" : "")}{d}");
+        }
+
+        bool opt4AsExpected = opt4ChecksumOk
+            && opt4Deltas.Count == 1
+            && opt4Deltas[0] == $"slot{TraceCounters.BookBestAskValid}+1";
+
+        Console.WriteLine(opt4AsExpected
+            ? "tuned(opt4)-vs-baseline C#: checksum IDENTICAL, counters differ by the one "
+              + "EXPECTED slot (bestask_valid +1, sentinel read)"
+            : $"tuned(opt4)-vs-baseline C#: **UNEXPECTED** checksumOk={opt4ChecksumOk} "
+              + $"deltas=[{string.Join(",", opt4Deltas)}]");
+
         // Restore the full counter vector for the cross-language report below.
         TraceCounters.Reset();
         OrderBookWorkload.Run<CountTrace>(book.Events, bid, ask);
@@ -201,6 +251,11 @@ public static class Program
         var offsets = fix.Offsets;
         int msgCount = fix.Count;
 
+        // orderbook_l2_opt4 needs ladders one element longer (sentinel slot). Separate
+        // arrays so the canonical rows keep running on exactly the buffers they always did.
+        long[]? bidP1 = null;
+        long[]? askP1 = null;
+
         double[]? probe = doProbe ? Harness.ProbeCores(Environment.ProcessorCount) : null;
         if (doProbe) Harness.PinToCore(core);
 
@@ -220,6 +275,8 @@ public static class Program
             ("orderbook_l2_unsafe", events.Length, () => OrderBookWorkload.RunUnsafe(events, bid, ask)),
             ("orderbook_l2_opt",    events.Length, () => OrderBookWorkload.RunOpt(events, bid, ask)),
             ("orderbook_l2_opt2",   events.Length, () => OrderBookWorkload.RunOpt2(events, bid, ask)),
+            ("orderbook_l2_opt3",   events.Length, () => OrderBookWorkload.RunOpt3(events, bid, ask)),
+            ("orderbook_l2_opt4",   events.Length, () => OrderBookWorkload.RunOpt4(events, bidP1!, askP1!)),
             ("fix_parse_safe",         msgCount, () => FixParseWorkload.Run(payload, offsets, msgCount)),
             ("fix_parse_safe_simd",    msgCount, () => FixParseWorkload.RunSimd(payload, offsets, msgCount)),
             ("fix_parse_opt",          msgCount, () => FixParseWorkload.RunOpt(payload, offsets, msgCount)),
@@ -236,6 +293,14 @@ public static class Program
         {
             Console.Error.WriteLine($"[error] --only '{only}' matched no benchmark");
             return 4;
+        }
+
+        // Allocated only when the opt4 row is actually selected, so an ordinary run pays
+        // nothing for the extra ladders.
+        if (selected.Any(c => c.Name.Contains("_opt4", StringComparison.Ordinal)))
+        {
+            bidP1 = new long[book.TickCount + 1];
+            askP1 = new long[book.TickCount + 1];
         }
 
         // --nogc: suppress garbage collection outright for the measured region.
