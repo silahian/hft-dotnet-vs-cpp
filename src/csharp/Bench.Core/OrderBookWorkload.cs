@@ -22,7 +22,7 @@ public static class OrderBookWorkload
 
     /// <summary>Safe C#. Spans hoisted so the JIT sees loop-invariant lengths.</summary>
     public static ulong Run<TTrace>(ReadOnlySpan<BookEvent> events, Span<long> bid, Span<long> ask)
-        where TTrace : ITrace
+        where TTrace : struct, ITrace
     {
         bid.Clear();
         ask.Clear();
@@ -117,7 +117,7 @@ public static class OrderBookWorkload
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static ulong RunOpt<TTrace>(ReadOnlySpan<BookEvent> events, Span<long> bid, Span<long> ask)
-        where TTrace : ITrace
+        where TTrace : struct, ITrace
     {
         bid.Clear();
         ask.Clear();
@@ -227,7 +227,7 @@ public static class OrderBookWorkload
         => RunOpt2<NullTrace>(events, bid, ask);
 
     public static ulong RunOpt2<TTrace>(ReadOnlySpan<BookEvent> events, Span<long> bid, Span<long> ask)
-        where TTrace : ITrace
+        where TTrace : struct, ITrace
     {
         bid.Clear();
         ask.Clear();

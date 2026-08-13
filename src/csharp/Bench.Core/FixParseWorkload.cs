@@ -153,13 +153,13 @@ public static class FixParseWorkload
         => Run<NoSum>(payload, offsets, count);
 
     public static ulong Run<TSum>(ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
+        where TSum : struct, ISumPolicy
         => Run<TSum, NullTrace>(payload, offsets, count);
 
     public static ulong Run<TSum, TTrace>(
         ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         ulong h = Checksum.Offset;
         for (int m = 0; m < count; m++)
@@ -173,8 +173,8 @@ public static class FixParseWorkload
     }
 
     private static ulong ParseOne<TSum, TTrace>(ReadOnlySpan<byte> msg, ulong h)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         long seq = 0, qty = 0, px = 0;
         int side = 0;
@@ -237,7 +237,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParseLong<TTrace>(ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static long ParseLong<TTrace>(ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         long v = 0;
         for (int i = 0; i < s.Length; i++)
@@ -250,7 +250,7 @@ public static class FixParseWorkload
 
     /// <summary>Decimal ASCII to fixed-point scaled by 1e6.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParsePrice6<TTrace>(ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static long ParsePrice6<TTrace>(ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         long whole = 0;
         int i = 0;
@@ -277,7 +277,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong FoldBytes<TTrace>(ulong h, ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static ulong FoldBytes<TTrace>(ulong h, ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         for (int i = 0; i < s.Length; i++)
         {
@@ -311,8 +311,8 @@ public static class FixParseWorkload
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static ulong RunOpt<TSum, TTrace>(
         ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         ulong h = Checksum.Offset;
         ref byte pay0 = ref MemoryMarshal.GetReference(payload);
@@ -330,8 +330,8 @@ public static class FixParseWorkload
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static ulong ParseOneOpt<TSum, TTrace>(ref byte msg, int len, ulong h)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         long seq = 0, qty = 0, px = 0;
         int side = 0;
@@ -396,7 +396,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParseLongRef<TTrace>(ref byte s, int n) where TTrace : ITrace
+    private static long ParseLongRef<TTrace>(ref byte s, int n) where TTrace : struct, ITrace
     {
         long v = 0;
         for (int i = 0; i < n; i++)
@@ -408,7 +408,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParsePrice6Ref<TTrace>(ref byte s, int n) where TTrace : ITrace
+    private static long ParsePrice6Ref<TTrace>(ref byte s, int n) where TTrace : struct, ITrace
     {
         long whole = 0;
         int i = 0;
@@ -435,7 +435,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong FoldBytesRef<TTrace>(ulong h, ref byte s, int n) where TTrace : ITrace
+    private static ulong FoldBytesRef<TTrace>(ulong h, ref byte s, int n) where TTrace : struct, ITrace
     {
         for (int i = 0; i < n; i++)
         {
