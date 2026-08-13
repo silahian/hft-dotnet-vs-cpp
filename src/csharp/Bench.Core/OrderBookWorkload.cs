@@ -109,7 +109,18 @@ public static class OrderBookWorkload
     ///    not pin and does not inhibit the same optimizations.
     /// 3. <c>ref readonly</c> for the 16-byte event struct, so it is read in place
     ///    rather than copied per iteration.
-    /// 4. <c>nint</c> index arithmetic, avoiding a sign-extend (movsxd) on every access.
+    /// 4. <c>nint</c> index arithmetic.
+    ///
+    /// CORRECTION: point 4 used to read "avoiding a sign-extend (movsxd) on every
+    /// access". That is false, and the emitted assembly says so — <c>(nint)someInt</c>
+    /// IS a sign-extend, and RyuJIT emits 7 <c>movsxd</c> in this method, including one
+    /// on every rescan iteration:
+    ///     mov    r11d, dword ptr [r8]
+    ///     movsxd rsi, r11d
+    ///     mov    qword ptr [r9+8*rsi], rbx
+    /// MSVC, by contrast, folds the widening into the load and reuses the 64-bit
+    /// register. Widening by ZERO-extension is what actually removes the instruction;
+    /// see <see cref="RunOpt3"/>, which drops it from 7 to 2.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static ulong RunOpt(ReadOnlySpan<BookEvent> events, Span<long> bid, Span<long> ask)
