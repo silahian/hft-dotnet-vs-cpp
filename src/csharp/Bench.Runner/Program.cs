@@ -144,6 +144,37 @@ public static class Program
             : $"tuned(opt4)-vs-baseline C#: **UNEXPECTED** checksumOk={opt4ChecksumOk} "
               + $"deltas=[{string.Join(",", opt4Deltas)}]");
 
+        // The POH variants reach the data through raw pointers with no `fixed` and no
+        // bounds checks. Nothing in the compiler will catch an off-by-one in that pointer
+        // arithmetic, so the counters and the checksum are the only guard: if either
+        // diverges, the timing comparison would be measuring a different algorithm.
+        var pohEvents = GC.AllocateArray<BookEvent>(book.Events.Length, pinned: true);
+        book.Events.CopyTo(pohEvents, 0);
+        var pohBid = GC.AllocateArray<long>(book.TickCount, pinned: true);
+        var pohAsk = GC.AllocateArray<long>(book.TickCount, pinned: true);
+        var pohPayload = GC.AllocateArray<byte>(fix.Payload.Length, pinned: true);
+        fix.Payload.CopyTo(pohPayload, 0);
+        var pohOffsets = GC.AllocateArray<uint>(fix.Offsets.Length, pinned: true);
+        fix.Offsets.CopyTo(pohOffsets, 0);
+
+        TraceCounters.Reset();
+        ulong bookPohSum = OrderBookWorkload.RunPoh<CountTrace>(pohEvents, pohBid, pohAsk);
+        ulong fixPohSum = FixParseWorkload.RunPoh<ScalarSum, CountTrace>(
+            pohPayload, pohOffsets, fix.Count);
+        var pohCounters = (long[])TraceCounters.Values.Clone();
+
+        TraceCounters.Reset();
+        OrderBookWorkload.Run<CountTrace>(book.Events, bid, ask);
+        FixParseWorkload.Run<ScalarSum, CountTrace>(fix.Payload, fix.Offsets, fix.Count);
+
+        bool pohMatches = bookPohSum == bookSum && fixPohSum == fixSum;
+        for (int i = 0; i < TraceCounters.Size; i++)
+            if (pohCounters[i] != TraceCounters.Values[i]) pohMatches = false;
+
+        Console.WriteLine(pohMatches
+            ? "poh-vs-baseline C#:         counters and checksums IDENTICAL"
+            : "poh-vs-baseline C#:         **DIVERGENCE** -- the POH variant does different work");
+
         // Restore the full counter vector for the cross-language report below.
         TraceCounters.Reset();
         OrderBookWorkload.Run<CountTrace>(book.Events, bid, ask);
@@ -251,6 +282,16 @@ public static class Program
         var offsets = fix.Offsets;
         int msgCount = fix.Count;
 
+        // POH copies, used ONLY by the *_poh rows. Deliberately not shared with any other
+        // benchmark: moving the canonical rows onto different memory would invalidate every
+        // number already committed under results/. Allocated below only when a _poh row is
+        // actually selected, so an ordinary run pays nothing for them.
+        BookEvent[]? pohEvents = null;
+        long[]? pohBid = null;
+        long[]? pohAsk = null;
+        byte[]? pohPayload = null;
+        uint[]? pohOffsets = null;
+
         // orderbook_l2_opt4 needs ladders one element longer (sentinel slot). Separate
         // arrays so the canonical rows keep running on exactly the buffers they always did.
         long[]? bidP1 = null;
@@ -282,9 +323,15 @@ public static class Program
             ("fix_parse_opt",          msgCount, () => FixParseWorkload.RunOpt(payload, offsets, msgCount)),
             ("fix_parse_opt_simd",     msgCount, () => FixParseWorkload.RunOptSimd(payload, offsets, msgCount)),
             ("fix_parse_safe_simd_create", msgCount, () => FixParseWorkload.RunSimdCreate(payload, offsets, msgCount)),
+            ("fix_parse_safe_simd_tuned", msgCount, () => FixParseWorkload.RunSimdTuned(payload, offsets, msgCount)),
             ("fix_parse_nosum",        msgCount, () => FixParseWorkload.RunNoSum(payload, offsets, msgCount)),
             ("fix_parse_unsafe",       msgCount, () => FixParseWorkload.RunUnsafe(payload, offsets, msgCount)),
             ("fix_parse_unsafe_ptrspan", msgCount, () => FixParseWorkload.RunUnsafePtrSpanScan(payload, offsets, msgCount)),
+            // Raw pointers with NO `fixed`, on Pinned Object Heap buffers. Diagnostic.
+            // Paired against *_unsafe (isolates the pin) and *_opt/_opt2 (isolates ptr vs ref).
+            ("orderbook_l2_poh",   events.Length, () => OrderBookWorkload.RunPoh(pohEvents!, pohBid!, pohAsk!)),
+            ("fix_parse_poh",          msgCount, () => FixParseWorkload.RunPoh(pohPayload!, pohOffsets!, msgCount)),
+            ("fix_parse_poh_simd",     msgCount, () => FixParseWorkload.RunPohSimd(pohPayload!, pohOffsets!, msgCount)),
         };
 
         string only = Get(o, "only", "");
@@ -295,12 +342,27 @@ public static class Program
             return 4;
         }
 
-        // Allocated only when the opt4 row is actually selected, so an ordinary run pays
-        // nothing for the extra ladders.
+        // Allocate the pinned buffers only if a _poh row is going to run. GC.AllocateArray
+        // with pinned:true is the ONLY sanctioned source for these -- the workloads take a
+        // raw pointer to the array data and hold it across the whole loop with no `fixed`,
+        // which is safe exactly because POH objects never move.
         if (selected.Any(c => c.Name.Contains("_opt4", StringComparison.Ordinal)))
         {
             bidP1 = new long[book.TickCount + 1];
             askP1 = new long[book.TickCount + 1];
+        }
+
+        if (selected.Any(c => c.Name.Contains("_poh", StringComparison.Ordinal)))
+        {
+            pohEvents = GC.AllocateArray<BookEvent>(events.Length, pinned: true);
+            events.CopyTo(pohEvents, 0);
+            pohBid = GC.AllocateArray<long>(book.TickCount, pinned: true);
+            pohAsk = GC.AllocateArray<long>(book.TickCount, pinned: true);
+            pohPayload = GC.AllocateArray<byte>(payload.Length, pinned: true);
+            payload.CopyTo(pohPayload, 0);
+            pohOffsets = GC.AllocateArray<uint>(offsets.Length, pinned: true);
+            offsets.CopyTo(pohOffsets, 0);
+            Console.WriteLine("POH buffers allocated (pinned: true)");
         }
 
         // --nogc: suppress garbage collection outright for the measured region.

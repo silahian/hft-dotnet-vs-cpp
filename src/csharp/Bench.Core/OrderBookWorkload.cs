@@ -565,6 +565,119 @@ public static class OrderBookWorkload
     }
 
     /// <summary>
+    /// PINNED OBJECT HEAP variant. Raw pointers, identical to <see cref="RunUnsafe"/>,
+    /// but with NO <c>fixed</c> statement: the arrays are allocated via
+    /// <c>GC.AllocateArray&lt;T&gt;(n, pinned: true)</c>, so the objects never move and
+    /// the pointers stay valid for their whole lifetime. There is nothing left for
+    /// <c>fixed</c> to do.
+    ///
+    /// Exists to DECOMPOSE the repo's least-reproducible finding ("`unsafe` + `fixed`
+    /// never made C# faster, sometimes slower"). Two independent contrasts:
+    ///
+    ///   RunUnsafe (fixed + ptr) vs RunPoh (no fixed + ptr)  -> isolates THE PIN
+    ///   RunPoh    (raw ptr)     vs RunOpt2 (managed ref)    -> isolates PTR vs REF
+    ///
+    /// If RunPoh lands at RunOpt2's speed, per-call pinning was the cost and the
+    /// hypothesis in README is confirmed. If it lands at RunUnsafe's speed, pinning is
+    /// not the mechanism and that claim needs rewriting.
+    ///
+    /// SAFETY: <paramref name="events"/>, <paramref name="bid"/> and <paramref name="ask"/>
+    /// MUST be POH allocations. A regular heap array compiles fine here and usually
+    /// appears to work, then corrupts the heap under GC pressure — the failure is not a
+    /// clean crash. Allocation is centralized in Bench.Runner for exactly this reason.
+    /// </summary>
+    public static unsafe ulong RunPoh(BookEvent[] events, long[] bid, long[] ask)
+        => RunPoh<NullTrace>(events, bid, ask);
+
+    public static unsafe ulong RunPoh<TTrace>(BookEvent[] events, long[] bid, long[] ask)
+        where TTrace : struct, ITrace
+    {
+        Array.Clear(bid);
+        Array.Clear(ask);
+
+        int tickCount = bid.Length;
+        int bestBid = -1;
+        int bestAsk = tickCount;
+        ulong h = Checksum.Offset;
+
+        // Pattern 1A: ref -> pointer inline, no null check, no pin metadata. Valid only
+        // because the arrays are on the POH (see SAFETY above).
+        BookEvent* evBase = (BookEvent*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(events));
+        long* bidBase = (long*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(bid));
+        long* askBase = (long*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(ask));
+
+        int n = events.Length;
+        for (int i = 0; i < n; i++)
+        {
+            TTrace.Count(TraceCounters.BookEvents);
+
+            BookEvent e = evBase[i];
+            int idx = e.TickIndex;
+            long qty = e.Qty;
+
+            if (qty != 0) TTrace.Count(TraceCounters.BookQtyNonZero);
+            else TTrace.Count(TraceCounters.BookQtyZero);
+
+            if (e.Side == 0)
+            {
+                TTrace.Count(TraceCounters.BookSideBid);
+                bidBase[idx] = qty;
+                if (qty != 0)
+                {
+                    if (idx > bestBid) { TTrace.Count(TraceCounters.BookBidImprove); bestBid = idx; }
+                }
+                else if (idx == bestBid)
+                {
+                    TTrace.Count(TraceCounters.BookBidRescan);
+                    int j = idx - 1;
+                    while (j >= 0 && bidBase[j] == 0)
+                    {
+                        TTrace.Count(TraceCounters.BookBidRescanIter);
+                        j--;
+                    }
+                    bestBid = j;
+                }
+            }
+            else
+            {
+                TTrace.Count(TraceCounters.BookSideAsk);
+                askBase[idx] = qty;
+                if (qty != 0)
+                {
+                    if (idx < bestAsk) { TTrace.Count(TraceCounters.BookAskImprove); bestAsk = idx; }
+                }
+                else if (idx == bestAsk)
+                {
+                    TTrace.Count(TraceCounters.BookAskRescan);
+                    int j = idx + 1;
+                    while (j < tickCount && askBase[j] == 0)
+                    {
+                        TTrace.Count(TraceCounters.BookAskRescanIter);
+                        j++;
+                    }
+                    bestAsk = j;
+                }
+            }
+
+            long bq;
+            if (bestBid >= 0) { TTrace.Count(TraceCounters.BookBestBidValid); bq = bidBase[bestBid]; }
+            else bq = 0;
+
+            long aq;
+            if (bestAsk < tickCount) { TTrace.Count(TraceCounters.BookBestAskValid); aq = askBase[bestAsk]; }
+            else aq = 0;
+
+            TTrace.Add(TraceCounters.BookMix, 4);
+            h = Checksum.Mix(h, (ulong)(long)bestBid);
+            h = Checksum.Mix(h, (ulong)bq);
+            h = Checksum.Mix(h, (ulong)(long)bestAsk);
+            h = Checksum.Mix(h, (ulong)aq);
+        }
+
+        return h;
+    }
+
+    /// <summary>
     /// Identical algorithm with bounds checks removed. Diagnostic only — this is
     /// the number that isolates "how much does array bounds checking actually cost
     /// on this workload", which is the question everyone asks and nobody measures.
