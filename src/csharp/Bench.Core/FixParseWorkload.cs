@@ -70,6 +70,68 @@ public struct SimdSum : ISumPolicy
 }
 
 /// <summary>
+/// DIAGNOSTIC. Same kernel as <see cref="SimdSum"/>, targeting three artifacts visible
+/// in the emitted assembly of that method (dumped via DOTNET_JitDisasm, FullOpts):
+///
+///   1. <c>vxorps ymm2, ymm2, ymm2</c> appears INSIDE the hot loop -- RyuJIT
+///      re-materializes the loop-invariant <c>Vector256&lt;byte&gt;.Zero</c> every
+///      iteration. The C++ counterpart hoists its <c>const __m256i zero</c>. Here the
+///      zero is bound to a local to try to force the hoist.
+///   2. <c>movsxd r9, r8d</c> per iteration, from the <c>int</c> -> <c>nuint</c> index
+///      conversion. The index is <c>nuint</c> throughout here, so no sign-extend.
+///   3. Two accumulators instead of one, breaking the serial <c>vpaddq</c> chain.
+///
+/// NOT a canonical row and NOT a replacement for <see cref="SimdSum"/>: the equal-effort
+/// pairing requires the C# and C++ SIMD sources to stay line-for-line counterparts, and
+/// the C++ HandSimdSum has none of these changes. This exists only to measure whether
+/// the codegen artifacts cost anything. The scalar tail is deliberately left identical
+/// so this isolates codegen rather than adding algorithmic cleverness C++ does not have.
+/// </summary>
+public struct SimdSumTuned : ISumPolicy
+{
+    public static bool Enabled => true;
+
+    // SimdSum.Sum is NOT inlined into ParseOne -- the disassembly shows a real
+    // `call [Bench.Core.SimdSum:Sum(...)]` per message, because RyuJIT declines to inline
+    // a method containing a loop. The C++ HandSimdSum::sum is a header-only static member
+    // compiled under /LTCG, so MSVC and GCC almost certainly DO inline it. Forcing the
+    // inline here restores parity rather than granting an advantage.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int Sum(ReadOnlySpan<byte> s)
+    {
+        nuint n = (nuint)s.Length;
+        nuint i = 0;
+        int total = 0;
+
+        if (Avx2.IsSupported && n >= 32)
+        {
+            ref byte origin = ref MemoryMarshal.GetReference(s);
+            Vector256<byte> zero = Vector256<byte>.Zero;
+            Vector256<ulong> acc0 = Vector256<ulong>.Zero;
+            Vector256<ulong> acc1 = Vector256<ulong>.Zero;
+
+            for (; i + 64 <= n; i += 64)
+            {
+                acc0 += Avx2.SumAbsoluteDifferences(Vector256.LoadUnsafe(ref origin, i), zero).AsUInt64();
+                acc1 += Avx2.SumAbsoluteDifferences(Vector256.LoadUnsafe(ref origin, i + 32), zero).AsUInt64();
+            }
+            if (i + 32 <= n)
+            {
+                acc0 += Avx2.SumAbsoluteDifferences(Vector256.LoadUnsafe(ref origin, i), zero).AsUInt64();
+                i += 32;
+            }
+
+            Vector256<ulong> acc = acc0 + acc1;
+            Vector128<ulong> sum128 = Sse2.Add(acc.GetLower(), acc.GetUpper());
+            total = (int)(sum128.GetElement(0) + sum128.GetElement(1));
+        }
+
+        for (; i < n; i++) total += s[(int)i];
+        return total;
+    }
+}
+
+/// <summary>
 /// Identical vector math to <see cref="SimdSum"/>, but loads with the fully bounds-
 /// checked <c>Vector256.Create&lt;byte&gt;(span.Slice(i, 32))</c> instead of
 /// <c>LoadUnsafe</c>.
@@ -149,17 +211,21 @@ public static class FixParseWorkload
     public static ulong RunSimdCreate(ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
         => Run<SimdSumCreate>(payload, offsets, count);
 
+    /// <summary>Diagnostic only — see <see cref="SimdSumTuned"/> for why it is not canonical.</summary>
+    public static ulong RunSimdTuned(ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
+        => Run<SimdSumTuned>(payload, offsets, count);
+
     public static ulong RunNoSum(ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
         => Run<NoSum>(payload, offsets, count);
 
     public static ulong Run<TSum>(ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
+        where TSum : struct, ISumPolicy
         => Run<TSum, NullTrace>(payload, offsets, count);
 
     public static ulong Run<TSum, TTrace>(
         ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         ulong h = Checksum.Offset;
         for (int m = 0; m < count; m++)
@@ -173,8 +239,8 @@ public static class FixParseWorkload
     }
 
     private static ulong ParseOne<TSum, TTrace>(ReadOnlySpan<byte> msg, ulong h)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         long seq = 0, qty = 0, px = 0;
         int side = 0;
@@ -237,7 +303,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParseLong<TTrace>(ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static long ParseLong<TTrace>(ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         long v = 0;
         for (int i = 0; i < s.Length; i++)
@@ -250,7 +316,7 @@ public static class FixParseWorkload
 
     /// <summary>Decimal ASCII to fixed-point scaled by 1e6.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParsePrice6<TTrace>(ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static long ParsePrice6<TTrace>(ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         long whole = 0;
         int i = 0;
@@ -277,7 +343,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong FoldBytes<TTrace>(ulong h, ReadOnlySpan<byte> s) where TTrace : ITrace
+    private static ulong FoldBytes<TTrace>(ulong h, ReadOnlySpan<byte> s) where TTrace : struct, ITrace
     {
         for (int i = 0; i < s.Length; i++)
         {
@@ -311,8 +377,8 @@ public static class FixParseWorkload
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static ulong RunOpt<TSum, TTrace>(
         ReadOnlySpan<byte> payload, ReadOnlySpan<uint> offsets, int count)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         ulong h = Checksum.Offset;
         ref byte pay0 = ref MemoryMarshal.GetReference(payload);
@@ -330,8 +396,8 @@ public static class FixParseWorkload
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static ulong ParseOneOpt<TSum, TTrace>(ref byte msg, int len, ulong h)
-        where TSum : ISumPolicy
-        where TTrace : ITrace
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
     {
         long seq = 0, qty = 0, px = 0;
         int side = 0;
@@ -396,7 +462,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParseLongRef<TTrace>(ref byte s, int n) where TTrace : ITrace
+    private static long ParseLongRef<TTrace>(ref byte s, int n) where TTrace : struct, ITrace
     {
         long v = 0;
         for (int i = 0; i < n; i++)
@@ -408,7 +474,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static long ParsePrice6Ref<TTrace>(ref byte s, int n) where TTrace : ITrace
+    private static long ParsePrice6Ref<TTrace>(ref byte s, int n) where TTrace : struct, ITrace
     {
         long whole = 0;
         int i = 0;
@@ -435,7 +501,7 @@ public static class FixParseWorkload
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong FoldBytesRef<TTrace>(ulong h, ref byte s, int n) where TTrace : ITrace
+    private static ulong FoldBytesRef<TTrace>(ulong h, ref byte s, int n) where TTrace : struct, ITrace
     {
         for (int i = 0; i < n; i++)
         {
@@ -633,6 +699,171 @@ public static class FixParseWorkload
     private static unsafe ulong FoldBytesU(ulong h, byte* s, int n)
     {
         for (int i = 0; i < n; i++) h = Checksum.Mix(h, s[i]);
+        return h;
+    }
+
+    // ------------------------------------------------------------------ POH variants
+    //
+    // Raw pointers with NO `fixed` statement. The buffers come from
+    // GC.AllocateArray<T>(n, pinned: true), so the objects never move and the pointers
+    // stay valid for their lifetime -- there is nothing for `fixed` to do.
+    //
+    // Decomposes the "`unsafe` + `fixed` bought nothing" finding into two contrasts:
+    //
+    //   RunUnsafe (fixed + ptr) vs RunPoh (no fixed + ptr)  -> isolates THE PIN
+    //   RunPoh    (raw ptr)     vs RunOpt (managed ref)     -> isolates PTR vs REF
+    //
+    // Note the payload/offsets arrays are large enough to land on the LOH, which is not
+    // compacted by default -- so the `fixed` in RunUnsafe pins buffers that were never
+    // going to move anyway. That makes this contrast a fairly direct measurement of the
+    // pin's bookkeeping and optimization cost rather than of relocation avoidance.
+    //
+    // SAFETY: payload and offsets MUST be POH allocations. A regular heap array compiles
+    // and usually appears to work, then corrupts the heap under GC pressure. Allocation
+    // is centralized in Bench.Runner for exactly this reason.
+
+    public static unsafe ulong RunPoh(byte[] payload, uint[] offsets, int count)
+        => RunPoh<ScalarSum, NullTrace>(payload, offsets, count);
+
+    public static unsafe ulong RunPohSimd(byte[] payload, uint[] offsets, int count)
+        => RunPoh<SimdSum, NullTrace>(payload, offsets, count);
+
+    public static unsafe ulong RunPoh<TSum, TTrace>(byte[] payload, uint[] offsets, int count)
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
+    {
+        ulong h = Checksum.Offset;
+
+        // Pattern 1A: ref -> pointer inline, no null check, no pin metadata.
+        byte* pay = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(payload));
+        uint* off = (uint*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(offsets));
+
+        for (int m = 0; m < count; m++)
+        {
+            TTrace.Count(TraceCounters.FixMessages);
+            int start = (int)off[m];
+            int len = (int)off[m + 1] - start;
+            h = ParseOnePoh<TSum, TTrace>(pay + start, payload.AsSpan(start, len), h);
+        }
+        return h;
+    }
+
+    private static unsafe ulong ParseOnePoh<TSum, TTrace>(
+        byte* msg, ReadOnlySpan<byte> msgSpan, ulong h)
+        where TSum : struct, ISumPolicy
+        where TTrace : struct, ITrace
+    {
+        long seq = 0, qty = 0, px = 0;
+        int side = 0;
+        int declared = -1, computed = -2;
+
+        int pos = 0;
+        int len = msgSpan.Length;
+
+        while (pos < len)
+        {
+            TTrace.Count(TraceCounters.FixFields);
+            int tagStart = pos;
+
+            int tag = 0;
+            while (pos < len && msg[pos] != Eq)
+            {
+                TTrace.Count(TraceCounters.FixTagDigits);
+                tag = tag * 10 + (msg[pos] - Zero);
+                pos++;
+            }
+            pos++; // '='
+
+            // Managed span, so this keeps the vectorized IndexOf that pairs against memchr.
+            TTrace.Count(TraceCounters.FixScanCalls);
+            int rel = msgSpan[pos..].IndexOf(Soh);
+            if (rel < 0) { TTrace.Count(TraceCounters.FixNoSoh); break; }
+            TTrace.Add(TraceCounters.FixScanDistance, rel);
+
+            int vend = pos + rel;
+            byte* val = msg + pos;
+            int vlen = rel;
+
+            switch (tag)
+            {
+                case 34: TTrace.Count(TraceCounters.FixCase34); seq = ParseLongPoh<TTrace>(val, vlen); break;
+                case 11: TTrace.Count(TraceCounters.FixCase11); h = FoldBytesPoh<TTrace>(h, val, vlen); break;
+                case 55: TTrace.Count(TraceCounters.FixCase55); h = FoldBytesPoh<TTrace>(h, val, vlen); break;
+                case 54: TTrace.Count(TraceCounters.FixCase54); side = val[0] - Zero; break;
+                case 38: TTrace.Count(TraceCounters.FixCase38); qty = ParseLongPoh<TTrace>(val, vlen); break;
+                case 44: TTrace.Count(TraceCounters.FixCase44); px = ParsePrice6Poh<TTrace>(val, vlen); break;
+                case 10:
+                    TTrace.Count(TraceCounters.FixCase10);
+                    declared = (int)ParseLongPoh<TTrace>(val, vlen);
+                    if (TSum.Enabled)
+                    {
+                        TTrace.Add(TraceCounters.FixSumBytes, tagStart);
+                        computed = TSum.Sum(new ReadOnlySpan<byte>(msg, tagStart)) & 0xFF;
+                    }
+                    break;
+                default: TTrace.Count(TraceCounters.FixCaseOther); break;
+            }
+
+            pos = vend + 1;
+        }
+
+        TTrace.Add(TraceCounters.FixMix, 5);
+        h = Checksum.Mix(h, (ulong)seq);
+        h = Checksum.Mix(h, (ulong)qty);
+        h = Checksum.Mix(h, (ulong)px);
+        h = Checksum.Mix(h, (ulong)(long)side);
+        h = Checksum.Mix(h, declared == computed ? 1UL : 0UL);
+        return h;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe long ParseLongPoh<TTrace>(byte* s, int n) where TTrace : struct, ITrace
+    {
+        long v = 0;
+        for (int i = 0; i < n; i++)
+        {
+            TTrace.Count(TraceCounters.FixParseLongDigit);
+            v = v * 10 + (s[i] - Zero);
+        }
+        return v;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe long ParsePrice6Poh<TTrace>(byte* s, int n) where TTrace : struct, ITrace
+    {
+        long whole = 0;
+        int i = 0;
+        for (; i < n && s[i] != Dot; i++)
+        {
+            TTrace.Count(TraceCounters.FixPriceIntDigit);
+            whole = whole * 10 + (s[i] - Zero);
+        }
+
+        long frac = 0;
+        int digits = 0;
+        if (i < n && s[i] == Dot)
+        {
+            i++;
+            for (; i < n && digits < 6; i++, digits++)
+            {
+                TTrace.Count(TraceCounters.FixPriceFracDigit);
+                frac = frac * 10 + (s[i] - Zero);
+            }
+        }
+        while (digits < 6) { TTrace.Count(TraceCounters.FixPricePadDigit); frac *= 10; digits++; }
+
+        return whole * 1_000_000L + frac;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe ulong FoldBytesPoh<TTrace>(ulong h, byte* s, int n)
+        where TTrace : struct, ITrace
+    {
+        for (int i = 0; i < n; i++)
+        {
+            TTrace.Count(TraceCounters.FixFoldBytes);
+            h = Checksum.Mix(h, s[i]);
+        }
         return h;
     }
 }

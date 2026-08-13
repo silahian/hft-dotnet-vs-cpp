@@ -87,11 +87,25 @@ Three findings from the matrix that are worth more than the headline:
   cell in the matrix (11.1pp residual between runs). Read it as "`unsafe` bought nothing,
   twice", not as "pinning is why". (An earlier README also
   cited `fix_parse_unsafe` here — a benchmark with zero process launches. Retracted.)
-- **Suppressing the GC changed nothing** once the hot path allocates zero bytes:
-  −2.2% on `fix_parse_safe_simd` (p = 0.669) and +0.2% on `orderbook_l2_opt2` (p = 0.730).
-  Note that `TryStartNoGCRegion` reserves a budget rather than disabling collection; the
-  result files now record `noGcActive` and the latency mode sampled *inside* the timed
-  region, so this is no longer taken on trust.
+- **Suppressing the GC changed little** once the hot path allocates zero bytes — but only
+  the Linux half of this claim is evidence. **RETRACTION:** this bullet previously read
+  "changed nothing", citing −2.2% on `fix_parse_safe_simd` and +0.2% on
+  `orderbook_l2_opt2`. Those are the *Windows* `jit-qjfl` → `jit-qjfl-nogc` deltas, and
+  all 44 Windows `proc-jit-qjfl-nogc-*.json` files record
+  `noGcRequested=False; noGcActive=False; latencyModeDuringRun=Batch` — a flags string
+  byte-identical to plain `jit-qjfl`. The `--nogc` flag was never applied in the runs that
+  produced them, so that comparison was a configuration against itself and measured only
+  run-to-run noise. (`run-matrix.ps1` does pass `--nogc`; those artifacts predate it, from
+  the ad-hoc invocations the script's own comment admits to.) The Windows figures are
+  withdrawn pending a re-run.
+  The Linux cells are sound — all 55 `proc-lnx-jit-qjfl-nogc-*.json` record
+  `noGcActive=True; latencyModeDuringRun=NoGCRegion` — and they say **+0.03% on
+  `fix_parse_safe_simd`** (96.31 → 96.34) and **+5.4% on `orderbook_l2_opt2`**
+  (7.34 → 7.74). So the honest reading is "no measurable benefit, and possibly a small
+  cost on the ladder", not "changed nothing".
+  The provenance mechanism worked exactly as designed here: `noGcActive` recorded the
+  truth in every file. Nobody read it back. Note also that `TryStartNoGCRegion` reserves a
+  budget rather than disabling collection.
 
 ## What makes this comparison trustworthy
 
