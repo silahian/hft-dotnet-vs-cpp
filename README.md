@@ -204,3 +204,8 @@ third is more likely than not.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Further Reading
+
+- Benchmark write-up and architectural analysis: [I Was Asked to Rebuild an HFT System in C#. I Laughed. Then I Measured It Twice.](https://electronictradinghub.com/i-was-asked-to-rebuild-an-hft-system-in-c-i-laughed-then-i-measured-it-twice/)
+- Architecture reviews & low-latency advisory: [HFT Advisory](https://hftadvisory.com/advisory/)
